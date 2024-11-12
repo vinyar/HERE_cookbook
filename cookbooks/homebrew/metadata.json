@@ -1,0 +1,36 @@
+{
+  "name": "homebrew",
+  "description": "Install Homebrew and includes resources for working with taps and casks",
+  "long_description": "",
+  "maintainer": "Sous Chefs",
+  "maintainer_email": "help@sous-chefs.org",
+  "license": "Apache-2.0",
+  "platforms": {
+    "mac_os_x": ">= 0.0.0"
+  },
+  "dependencies": {
+
+  },
+  "providing": {
+
+  },
+  "recipes": {
+
+  },
+  "version": "5.4.8",
+  "source_url": "https://github.com/sous-chefs/homebrew",
+  "issues_url": "https://github.com/sous-chefs/homebrew/issues",
+  "privacy": false,
+  "chef_versions": [
+    [
+      ">= 15.3"
+    ]
+  ],
+  "ohai_versions": [
+
+  ],
+  "gems": [
+
+  ],
+  "eager_load_libraries": true
+}
