@@ -26,6 +26,9 @@ package 'Installing cronolog from epel' do
     action :install
 end
 
+# setting timezone
+execute 'sudo timedatectl set-timezone America/Los_Angeles'
+
 ## vbox hard drive is set to 200 GB in the Vagrant file
 execute 'grow partition to fill allocated vbox space' do
     command <<-EOF
@@ -54,8 +57,8 @@ end
 # end
 
 directory '/opt/tomcat' do
-    # owner 'root'  # at this point correct users dont exist yet.
-    # group 'root'  # at this point correct users dont exist yet.
+    # owner 'navteq'  # at this point correct users dont exist yet.
+    # group 'navteq'  # at this point correct users dont exist yet.
     mode '0755'
     action :create
 end
@@ -67,7 +70,7 @@ execute 'extract_tomcat' do
     not_if { ::File.directory?('/opt/tomcat') && ::File.size?('/opt/tomcat/bin/catalina.sh') }
 end
 
-# line cookbook
+#### updating path for Java and Tomcat - via line cookbook
 append_if_no_line 'update profile for JAVA_HOME' do
     sensitive false
     path '/etc/profile'
@@ -87,7 +90,7 @@ replace_or_add 'update profile path' do
     line 'export PATH=$JAVA_HOME/bin:$CATALINA_HOME:ORION:$PATH'
 end
 
-### Updating Limits file
+#### Updating Limits file
 append_if_no_line 'setting soft limit' do
     sensitive false
     path '/etc/security/limits.conf'
@@ -111,14 +114,14 @@ directory '/opt/Navteq' do
     action :create
 end
 
-## Installing Base RPM
+## Installing NVT Base RPM
 ## Note: this install fails to create navteq home folders, so it's done above.
 package 'installing nvt-base' do
     package_name 'nvt-base-gc-2.1.0-8.el6'
     source '/vagrant/here_bits/nvt-base-gc-2.1.0-8.el6.noarch.rpm'
-    # sudo rpm -ihvv /vagrant/here_bits/nvt-base-gc-2.1.0-8.el6.noarch.rpm
     options '-vv'
     action :install
+    # sudo rpm -ihvv /vagrant/here_bits/nvt-base-gc-2.1.0-8.el6.noarch.rpm    # manual command for reference
     # action :nothing      # <----- done manually for testing
 end
 
@@ -127,26 +130,29 @@ end
 package 'installing search6 code' do
     package_name 'nvt-search-search6-aggregation-service-code-6.2.255.1-1.noarch'
     source '/vagrant/here_bits/nvvt-search-search6-aggregation-servicecode-6.2.255.1-1.noarch.rpm'
-    # sudo rpm -ihvv nvvt-search-search6-aggregation-servicecode-6.2.255.1-1.noarch.rpm
     options '-vv'
     action :install
+    # sudo rpm -ihvv nvvt-search-search6-aggregation-servicecode-6.2.255.1-1.noarch.rpm    # manual command for reference
     # action :nothing      # <----- done manually for testing
 end
 
 package 'installing search6 config' do
     package_name 'nvt-search-search6-aggregation-service-config-msp-cust-6.2.255.1-1.noarch.rpm'
     source '/vagrant/here_bits/nvt-search-search6-aggregation-service-config-msp-cust-6.2.255.1-1.noarch.rpm'
-    # sudo rpm -ihvv nvt-search-search6-aggregation-service-config-msp-cust-6.2.255.1-1.noarch.rpm
     options '-vv'
     action :install
-    # action :nothing
+    # sudo rpm -ihvv nvt-search-search6-aggregation-service-config-msp-cust-6.2.255.1-1.noarch.rpm    # manual command for reference
+    # action :nothing      # <----- done manually for testing
 end
 
-## modify location of tomcat - manual for now 
-## note: (if default apache-tomcat... is used, this is not needed)
+## modify NVT Search config to update location of tomcat - manual for now 
+## note: (if default 'apache-tomcat-8.5.28' folder name is used, this wont be needed)
 # template '/etc/opt/Navteq/search-search6-aggregationservice-6.2.255.1.conf'
 # or
 # execute 'sed'
+
+# <<< ?? Missing step ?? >>>
+# modify /etc/opt/Navteq/m2...conf with similar updates to above
 
 #### Updating permissions
 ## update tomcat directory permissions
@@ -160,15 +166,15 @@ end
 
 execute 'update folder permissions' do
     command <<-EOF
-        sudo chmod -R a+r /opt/tomcat
-        sudo chown -R navteq:navteq /opt/tomcat 
-        sudo chown -R navteq:navteq /etc/opt/Navteq/ 
-        sudo chown -R navteq:navteq /var/opt/Navteq/ 
-        sudo chown -R navteq:navteq /opt/Navteq/
-        sudo chmod -R 755 /opt/tomcat 
-        sudo chmod -R 755 /etc/opt/Navteq/ 
-        sudo chmod -R 755 /var/opt/Navteq/ 
-        sudo chmod -R 755 /opt/Navteq/
+    sudo chown -R navteq:navteq /opt/tomcat 
+    sudo chown -R navteq:navteq /etc/opt/Navteq/ 
+    sudo chown -R navteq:navteq /var/opt/Navteq/ 
+    sudo chown -R navteq:navteq /opt/Navteq/
+    # sudo chmod -R a+r /opt/tomcat
+    sudo chmod -R 755 /opt/tomcat 
+    sudo chmod -R 755 /etc/opt/Navteq/ 
+    sudo chmod -R 755 /var/opt/Navteq/ 
+    sudo chmod -R 755 /opt/Navteq/
     EOF
     action :run
     # not_if 'find /var/opt/Navteq -not -user navteq -or -not -group navteq'
@@ -184,9 +190,7 @@ end
 # end
 
 execute 'reload Tomcat' do
-    command <<-EOF
-        systemctl daemon-reload
-    EOF
+    command 'systemctl daemon-reload'
 end
 
 service 'tomcat' do
@@ -315,38 +319,38 @@ end
 
 # later versions of cookbook went to custom resources
 # java 'install oracle java' do
-#   random parameters below
-#     source ??
+#     source 'file:///vagrant/here_pre-reqs'
 #     install_flavor 'oracle'
 #     version '8'
 # end
 
-## package // service approach
-# -- or can just download file -- assuming i can get past password page
-# -- or host file locally -- 
-# https://www.oracle.com/java/technologies/javase/javase8u211-later-archive-downloads.html
-# from Java.com - https://www.java.com/en/download/linux_manual.jsp
-
 
 # Java - Update timezone database for the specific version of JRE in use (Java Runtime Environment).
-# Cronolog  (recommended: cronolog-1.6.2)
-# 	Default configuration is fine
+# Java includes this and seems to work fine. Skipping
 
-# Sed (system app - located at /usr/bin)
-# Rpm (scripts use rpm installer)
 
+## Debugging RPM installer
+    # Install in extra detailed mode:
 # sudo RPM_DEBUG_LEVEL=8 rpm -ivvh --trace nvt-base-gc-2.1.0-8.el6.noarch.rpm &> rpm_install_debug.log
+    # Install in extra detailed mode and skipping scripts (bad as scripts are needed)
 # sudo RPM_DEBUG_LEVEL=8 rpm -ivh --noscripts --test --trace nvt-base-gc-2.1.0-8.el6.noarch.rpm
+    # figuring out what pre and post install scripts do.
 # rpm -qp --scripts nvt-base-gc-2.1.0-8.el6.noarch.rpm
+    # more RPM debugging. See every system call RPM does.
+# sudo strace -f -o rpm_debug_trace.log rpm -ivvh nvt-base-gc-2.1.0-8.el6.noarch.rpm
+    # SELinux permission denied messages and convert them to rules 
 # sudo ausearch -m AVC -ts recent | audit2allow
+    # temporarily changes the SELinux mode to permissive mode. (defined in /etc/selinux/config)
 # sudo setenforce 0
+    # various logs
 # sudo tail -f /var/log/messages
 # /var/log/audit/audit.log
 # /var/log/syslog
-# sudo strace -f -o rpm_debug_trace.log rpm -ivh nvt-base-gc-2.1.0-8.el6.noarch.rpm
+# /opt/tomcat/logs/
+# /var/log/tomcat/
 
 
-
+# RPM debugging flow
 # 1: test integrity of the RPM
 # sudo rpm -K nvt-base-gc-2.1.0-8.el6.noarch.rpm
 
@@ -359,52 +363,28 @@ end
 # 4 install in detailed mode - debug level rpm installer
 # sudo RPM_DEBUG_LEVEL=8 rpm -ivvh nvt-base-gc-2.1.0-8.el6.noarch.rpm # <<----
 
-# 5: every system call debug level
-# captures permission issues
-# super duper mega detailed to the point of being unnecessary
+# 5: system call debug level (captures permission issues)
+# super duper detailed
 # sudo strace -f -o rpm_debug_trace.log rpm -ivh nvt-base-gc-2.1.0-8.el6.noarch.rpm
 
-
-# sudo rpm -ihvv nvt-search-search6-aggregation-servicecode-6.2.255.1-1.noarch.rpm
-
-# not done
-# sudo chown -R navteq:navteq /etc/opt/Navteq/
-# sudo chown -R navteq:navteq /opt/Navteq/
-
-# sudo useradd -g navteq -s /bin/false -d /opt/tomcat navteq
+# Changing user home after user has already been created.
 # sudo usermod -d /opt/apache-tomcat-8.5.28 navteq
 
-# meta-inf = /opt/apache-tomcat-8.5.28/webapps/host-manager/META-INF
-# set allow to 127\.\d+\.\d+\.\d+|::1|0:0:0:0:0:0:0:1|.*
-# or
-# 10.0.2.2 for vagrant IP
 
-#untar
+# impersonating a user as opposed to sudo su
 # sudo -u navteq -i
-#tar -xvzf RGC_2024Q1.007.RR.20240919.tgz -C /var/opt/Navteq/share/search/geocoder/
 
-# Looks like the OS i am using has OS drive set to 40 GB max
-# drive needs to be expanded
-# sudo resize2fs /dev/sdX (/dev/sda1)
 
+# troubleshooting disk size and growing mounted disk
+# sudo yum install -y cloud-utils-growpart
 # sudo growpart /dev/sda 1
 # sudo pvresize /dev/sda1
 # sudo lvextend -L 200G /dev/mapper/VolGroup-lv_root
 # sudo resize2fs /dev/mapper/VolGroup-lv_root
 
-
 ## validate disk (extra)
 # set PATH=%PATH%;"C:\Program Files\Oracle\VirtualBox"
 # VBoxManage showhdinfo "C:\Users\alvin\VirtualBox VMs\HERE-geocache-karups_default_1731383688330_93272\box-disk001.vmdk"
-# sudo yum install -y cloud-utils-growpart
-
-############## Add to exec or vagrant init script:
-# sudo growpart /dev/sda 1
-# sudo file -sL /dev/sda1
-# sudo xfs_growfs /
-
-
-
 
 
 #### NVT Config RPM observations:
@@ -418,6 +398,17 @@ end
 # validate /etc/nvt-services.conf
 
 # logs:
-# /var/opt/Navteq/log
-# cronolog:
-# "/var/opt/Navteq/log/search-search6-aggregation-service-6.2.255.1/ 
+# service: /var/opt/Navteq/log/search-search6-aggregation-service-6.2.255.1/ 
+# tomcat: /opt/tomcat/logs
+
+# starting / stopping services
+# sudo /opt/Navteq/bin/search-search6-aggregationservice-6.2.255.1 status
+
+# validation:
+# http://localhost:8080/6.2/version.txt
+# http://localhost:8080/6.2/isalive
+
+# thoughts:
+# maybe /etc/opt/Navteq/search-search6-aggregation-service-6.2.255.1/conf/server.xml is not setup right
+
+# do we need to chance tomcat location here: /etc/opt/Navteq/me2repository-6.2.255.1.conf
