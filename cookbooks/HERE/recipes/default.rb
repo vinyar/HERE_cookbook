@@ -16,6 +16,11 @@ execute 'updating yum servers' do
     action :run
 end
 
+package 'Installing system packages' do
+    package_name %w(nano wget sed rpm unzip cloud-utils-growpart)
+    action :install
+end
+
 execute 'grow partition to fill allocated vbox space' do
     command <<-EOF
         sudo growpart /dev/sda 1
@@ -26,12 +31,6 @@ execute 'grow partition to fill allocated vbox space' do
     not_if "lsblk -no SIZE /dev/sda1 | grep 'G' | awk '{if ($1+0 >= 200) exit 0; else exit 1}'"
 end
 
-
-package 'Installing system packages' do
-    package_name %w(nano wget sed rpm unzip)
-    action :install
-end
-
 package 'installing java 8 - jdk-8u301-linux-x64' do
     package_name 'jdk-8u301-linux-x64'
     source '/vagrant/here_pre-reqs/jdk-8u301-linux-x64.rpm'    # Path to the local RPM file
@@ -39,23 +38,26 @@ package 'installing java 8 - jdk-8u301-linux-x64' do
     action :install
 end
 
-## Install Tomcat
-# source can be a download location or S3 that's used for staging
-remote_file '/opt/apache-tomcat-8.5.28.tar' do
-    source 'file:///vagrant/here_pre-reqs/apache-tomcat-8.5.28.tar'
-    owner 'root'
-    group 'root'
+## Install Tomcat - pull down file locally
+# remote_file '/opt/apache-tomcat-8.5.28.tar' do
+#     source 'file:///vagrant/here_pre-reqs/apache-tomcat-8.5.28.tar'
+#     owner 'root'
+#     group 'root'
+#     mode '0755'
+#     action :create
+# end
+
+directory '/opt/tomcat' do
+    # owner 'root'  # at this point correct users dont exist yet.
+    # group 'root'  # at this point correct users dont exist yet.
     mode '0755'
     action :create
 end
 
-## Install Tomcat - untar into /opt/tomcat folder
 execute 'extract_tomcat' do
-    command 'tar -xvf /opt/apache-tomcat-8.5.28.tar -C /opt/tomcat'
-    not_if { ::File.directory?('/opt/apache-tomcat-8.5.28') }
-    not_if { ::File.directory?('/opt/tomcat') }
-  end
-  
+    command 'tar -zxvf /vagrant/here_pre-reqs/apache-tomcat-8.5.28.tar -C /opt/tomcat  --strip-components=1'
+    not_if { ::File.directory?('/opt/tomcat') && ::File.size?('/opt/tomcat/bin/catalina.sh') }
+end
 
 # line cookbook
 append_if_no_line 'update profile for JAVA_HOME' do
@@ -70,17 +72,17 @@ append_if_no_line 'update profile for CATALINA_HOME' do
     line 'CATALINA_HOME=/opt/tomcat'
 end
 
-append_if_no_line 'setting initial tokenized path management' do
-    sensitive false
-    path '/etc/profile'
-    line 'export PATH=$ORION:$PATH'
-end
+# append_if_no_line 'setting initial tokenized path management' do
+#     sensitive false
+#     path '/etc/profile'
+#     line 'export PATH=$ORION:$PATH'
+# end
 
 replace_or_add 'update profile path' do
     sensitive false
     path '/etc/profile'
-    pattern '^export PATH=.*\$ORION.*\$PATH'
-    line 'export PATH=$JAVA_HOME/bin:$CATALINA_HOME:$ORION:$PATH'
+    pattern '^export PATH=.*ORION.*\$PATH'
+    line 'export PATH=$JAVA_HOME/bin:$CATALINA_HOME:ORION:$PATH'
 end
 
 ### Updating Limits file
@@ -96,9 +98,78 @@ append_if_no_line 'setting hard limit' do
     line 'navteq hard nofile 16348'
 end
 
+#### Preparing and Installing Nav Base
+## creating empty folder to avoid RPM failure. Base will update permissions.
+directory '/var/opt/Navteq' do
+    action :create
+end
+
+## creating empty folder to avoid RPM failure. Base will update permissions.
+directory '/opt/Navteq' do
+    action :create
+end
+
+## Installing Base RPM
+## Note: this install fails to create navteq home folders, so it's done above.
+package 'installing nvt-base' do
+    package_name 'nvt-base-gc-2.1.0-8.el6'
+    source '/vagrant/here_bits/nvt-base-gc-2.1.0-8.el6.noarch.rpm'
+    # sudo rpm -ihvv /vagrant/here_bits/nvt-base-gc-2.1.0-8.el6.noarch.rpm
+    options '-vv'
+    # action :install
+    action :nothing
+end
+
+## Validating just in case (can be a test later)
+directory '/var/opt/Navteq' do
+    owner 'navteq'
+    group 'navteq'
+    # mode '0755'
+    recursive true
+    action :nothing
+end
+
+directory '/var/opt/Navteq/share/search' do
+    owner 'navteq'
+    group 'navteq'
+    # mode '0755'
+    recursive true
+    action :create
+end
+
+
+package 'installing search-search6-aggregation-service' do
+    package_name 'nvt-search-search6-aggregation-service-code-6.2.255.1-1.noarch'
+    source '/vagrant/here_bits/nvvt-search-search6-aggregation-servicecode-6.2.255.1-1.noarch.rpm'
+    # sudo rpm -ihv nvvt-search-search6-aggregation-servicecode-6.2.255.1-1.noarch.rpm
+    options '-vv'
+    # action :install
+    action :nothing
+end
 
 
 
+
+## prepping for Map Data
+directory '/var/opt/Navteq/share/search/geocoder/' do
+    owner 'navteq'
+    group 'navteq'
+    # mode '0755'
+    recursive true
+    action :create
+end
+
+execute 'untar map data' do
+    command 'tar -xvzf /vagrant/here_bits/RGC_2024Q1.007.RR.20240919.tgz -C /var/opt/Navteq/share/search/geocoder/'
+    action :nothing
+end
+
+
+
+
+
+
+## Removing in favor of them being created by the navteq base package
 # group 'nvtinstall' do
 #     members 'members'
 #     action :create
@@ -110,7 +181,6 @@ end
 #     action :create
 #     gid '499'
 # end
-
 
 # user 'nvtinstall' do
 #     comment 'comment'
