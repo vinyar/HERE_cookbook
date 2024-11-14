@@ -17,10 +17,16 @@ execute 'updating yum servers' do
 end
 
 package 'Installing system packages' do
-    package_name %w(nano wget sed rpm unzip cloud-utils-growpart)
+    package_name %w(nano wget sed rpm unzip cloud-utils-growpart epel-release)
     action :install
 end
 
+package 'Installing cronolog from epel' do
+    package_name %w(epel-release cronolog)
+    action :install
+end
+
+## vbox hard drive is set to 200 GB in the Vagrant file
 execute 'grow partition to fill allocated vbox space' do
     command <<-EOF
         sudo growpart /dev/sda 1
@@ -38,7 +44,7 @@ package 'installing java 8 - jdk-8u301-linux-x64' do
     action :install
 end
 
-## Install Tomcat - pull down file locally
+## Install Tomcat - copy file locally
 # remote_file '/opt/apache-tomcat-8.5.28.tar' do
 #     source 'file:///vagrant/here_pre-reqs/apache-tomcat-8.5.28.tar'
 #     owner 'root'
@@ -56,6 +62,8 @@ end
 
 execute 'extract_tomcat' do
     command 'tar -zxvf /vagrant/here_pre-reqs/apache-tomcat-8.5.28.tar -C /opt/tomcat  --strip-components=1'
+    # optimization - untar with permissions already set to a+r
+    # command 'umask 022 && tar -zxvf /vagrant/here_pre-reqs/apache-tomcat-8.5.28.tar -C /opt/tomcat  --strip-components=1'
     not_if { ::File.directory?('/opt/tomcat') && ::File.size?('/opt/tomcat/bin/catalina.sh') }
 end
 
@@ -71,12 +79,6 @@ append_if_no_line 'update profile for CATALINA_HOME' do
     path '/etc/profile'
     line 'CATALINA_HOME=/opt/tomcat'
 end
-
-# append_if_no_line 'setting initial tokenized path management' do
-#     sensitive false
-#     path '/etc/profile'
-#     line 'export PATH=$ORION:$PATH'
-# end
 
 replace_or_add 'update profile path' do
     sensitive false
@@ -99,12 +101,12 @@ append_if_no_line 'setting hard limit' do
 end
 
 #### Preparing and Installing Nav Base
-## creating empty folder to avoid RPM failure. Base will update permissions.
+## creating empty folder to avoid RPM failure. Base installer will update permissions.
 directory '/var/opt/Navteq' do
     action :create
 end
 
-## creating empty folder to avoid RPM failure. Base will update permissions.
+## creating empty folder to avoid RPM failure. Base installer will update permissions.
 directory '/opt/Navteq' do
     action :create
 end
@@ -116,19 +118,107 @@ package 'installing nvt-base' do
     source '/vagrant/here_bits/nvt-base-gc-2.1.0-8.el6.noarch.rpm'
     # sudo rpm -ihvv /vagrant/here_bits/nvt-base-gc-2.1.0-8.el6.noarch.rpm
     options '-vv'
-    # action :install
-    action :nothing
+    action :install
+    # action :nothing      # <----- done manually for testing
 end
 
-## Validating just in case (can be a test later)
-directory '/var/opt/Navteq' do
+
+#### Preparing and installing NVT Search components
+package 'installing search6 code' do
+    package_name 'nvt-search-search6-aggregation-service-code-6.2.255.1-1.noarch'
+    source '/vagrant/here_bits/nvvt-search-search6-aggregation-servicecode-6.2.255.1-1.noarch.rpm'
+    # sudo rpm -ihvv nvvt-search-search6-aggregation-servicecode-6.2.255.1-1.noarch.rpm
+    options '-vv'
+    action :install
+    # action :nothing      # <----- done manually for testing
+end
+
+package 'installing search6 config' do
+    package_name 'nvt-search-search6-aggregation-service-config-msp-cust-6.2.255.1-1.noarch.rpm'
+    source '/vagrant/here_bits/nvt-search-search6-aggregation-service-config-msp-cust-6.2.255.1-1.noarch.rpm'
+    # sudo rpm -ihvv nvt-search-search6-aggregation-service-config-msp-cust-6.2.255.1-1.noarch.rpm
+    options '-vv'
+    action :install
+    # action :nothing
+end
+
+## modify location of tomcat - manual for now 
+## note: (if default apache-tomcat... is used, this is not needed)
+# template '/etc/opt/Navteq/search-search6-aggregationservice-6.2.255.1.conf'
+# or
+# execute 'sed'
+
+#### Updating permissions
+## update tomcat directory permissions
+directory '/opt/tomcat' do
     owner 'navteq'
     group 'navteq'
-    # mode '0755'
+    mode '0755'
     recursive true
-    action :nothing
+    action :create
 end
 
+execute 'update folder permissions' do
+    command <<-EOF
+        sudo chmod -R a+r /opt/tomcat
+        sudo chown -R navteq:navteq /opt/tomcat 
+        sudo chown -R navteq:navteq /etc/opt/Navteq/ 
+        sudo chown -R navteq:navteq /var/opt/Navteq/ 
+        sudo chown -R navteq:navteq /opt/Navteq/
+        sudo chmod -R 755 /opt/tomcat 
+        sudo chmod -R 755 /etc/opt/Navteq/ 
+        sudo chmod -R 755 /var/opt/Navteq/ 
+        sudo chmod -R 755 /opt/Navteq/
+    EOF
+    action :run
+    # not_if 'find /var/opt/Navteq -not -user navteq -or -not -group navteq'
+end
+
+## Creating tomcat configuration
+# template '/etc/systemd/system/tomcat.service' do
+#     source 'tomcat.service.erb'
+#     owner 'root'
+#     group 'root'
+#     mode '0644'
+#     action :create
+# end
+
+execute 'reload Tomcat' do
+    command <<-EOF
+        systemctl daemon-reload
+    EOF
+end
+
+service 'tomcat' do
+    action [:enable, :start]
+end
+
+
+
+# /opt/tomcat/conf/server.xml
+# insert in <Host> block: 
+# <Value className="org.apache.catalina.valves.RemoteAddrValve" allow=".*" />
+
+# enable external access
+# /opt/tomcat/webapps/host-manager/META-INF/context.xml
+# add .* (or your ip 10.* for virtual box) to RemoteAddrValve so it looks like this:
+# allow="127\.\d+\.\d+\.\d+|::1|.*|0:0:0:0:0:0:0:1"
+
+# enable external access
+# /opt/tomcat/webapps/manager/META-INF/context.xml
+# add .* (or your ip 10.* for virtual box) to RemoteAddrValve so it looks like this:
+# allow="127\.\d+\.\d+\.\d+|::1|.*|0:0:0:0:0:0:0:1"
+
+# create Tomcat users
+# file: /opt/tomcat/conf/tomcat-users.xml
+# add within <tomcat-users> block:
+# <role rolename="admin-gui"/>
+# <role rolename="manager-gui"/>
+# <user username="tomcat" password="s3cret" roles="manager-gui,admin-gui,manager-jmx,manager-status"/>
+
+
+## prepping for Map Data
+## Creating folder 
 directory '/var/opt/Navteq/share/search' do
     owner 'navteq'
     group 'navteq'
@@ -138,19 +228,6 @@ directory '/var/opt/Navteq/share/search' do
 end
 
 
-package 'installing search-search6-aggregation-service' do
-    package_name 'nvt-search-search6-aggregation-service-code-6.2.255.1-1.noarch'
-    source '/vagrant/here_bits/nvvt-search-search6-aggregation-servicecode-6.2.255.1-1.noarch.rpm'
-    # sudo rpm -ihv nvvt-search-search6-aggregation-servicecode-6.2.255.1-1.noarch.rpm
-    options '-vv'
-    # action :install
-    action :nothing
-end
-
-
-
-
-## prepping for Map Data
 directory '/var/opt/Navteq/share/search/geocoder/' do
     owner 'navteq'
     group 'navteq'
@@ -160,13 +237,21 @@ directory '/var/opt/Navteq/share/search/geocoder/' do
 end
 
 execute 'untar map data' do
+    user 'navteq'
     command 'tar -xvzf /vagrant/here_bits/RGC_2024Q1.007.RR.20240919.tgz -C /var/opt/Navteq/share/search/geocoder/'
     action :nothing
 end
 
 
 
-
+## Removing granular config until everything is running.
+## recursively apply tomcat permissions
+# execute 'recursive_read_permission' do
+#     command 'chmod -R a+r /opt/tomcat'
+#     action :run
+#     # Guard to run only if any files within /opt/tomcat do not have the correct permissions
+#     not_if "find /opt/tomcat ! -perm -004 -print -quit | grep -vq ."
+# end
 
 
 ## Removing in favor of them being created by the navteq base package
@@ -322,3 +407,17 @@ end
 
 
 
+#### NVT Config RPM observations:
+# /etc/cron.daily/nvt-logrotate.sh
+# /etc/opt/Navteq/me2repository-6.2.255.1.conf
+# /etc/opt/Navteq/search-search6-aggregation-service-6.2.255.1.conf
+# /etc/opt/Navteq/search-search6-aggregation-service-6.2.255.1/conf/Catalina
+
+# /opt/Navteq/share/search-search6-aggregation-service-6.2.255.1
+
+# validate /etc/nvt-services.conf
+
+# logs:
+# /var/opt/Navteq/log
+# cronolog:
+# "/var/opt/Navteq/log/search-search6-aggregation-service-6.2.255.1/ 
