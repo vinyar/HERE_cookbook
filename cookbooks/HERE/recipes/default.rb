@@ -27,7 +27,10 @@ package 'Installing cronolog from epel' do
 end
 
 # setting timezone
-execute 'sudo timedatectl set-timezone America/Los_Angeles'
+execute 'set time zone' do
+    command 'sudo timedatectl set-timezone America/Los_Angeles'
+    not_if 'timedatectl | grep "Time zone: America/Los_Angeles"'
+end
 
 ## vbox hard drive is set to 200 GB in the Vagrant file
 execute 'grow partition to fill allocated vbox space' do
@@ -117,7 +120,7 @@ end
 ## Installing NVT Base RPM
 ## Note: this install fails to create navteq home folders, so it's done above.
 package 'installing nvt-base' do
-    package_name 'nvt-base-gc-2.1.0-8.el6'
+    package_name 'nvt-base-gc'
     source '/vagrant/here_bits/nvt-base-gc-2.1.0-8.el6.noarch.rpm'
     options '-vv'
     action :install
@@ -128,8 +131,8 @@ end
 
 #### Preparing and installing NVT Search components
 package 'installing search6 code' do
-    package_name 'nvt-search-search6-aggregation-service-code-6.2.255.1-1.noarch'
-    source '/vagrant/here_bits/nvvt-search-search6-aggregation-servicecode-6.2.255.1-1.noarch.rpm'
+    package_name 'nvt-search-search6-aggregation-service-code'
+    source '/vagrant/here_bits/nvt-search-search6-aggregation-service-code-6.2.255.1-1.noarch.rpm'
     options '-vv'
     action :install
     # sudo rpm -ihvv nvvt-search-search6-aggregation-servicecode-6.2.255.1-1.noarch.rpm    # manual command for reference
@@ -137,7 +140,7 @@ package 'installing search6 code' do
 end
 
 package 'installing search6 config' do
-    package_name 'nvt-search-search6-aggregation-service-config-msp-cust-6.2.255.1-1.noarch.rpm'
+    package_name 'nvt-search-search6-aggregation-service-config-msp-cust'
     source '/vagrant/here_bits/nvt-search-search6-aggregation-service-config-msp-cust-6.2.255.1-1.noarch.rpm'
     options '-vv'
     action :install
@@ -166,35 +169,40 @@ end
 
 execute 'update folder permissions' do
     command <<-EOF
-    sudo chown -R navteq:navteq /opt/tomcat 
-    sudo chown -R navteq:navteq /etc/opt/Navteq/ 
-    sudo chown -R navteq:navteq /var/opt/Navteq/ 
+    sudo chown -R navteq:navteq /opt/tomcat
+    sudo chown -R navteq:navteq /etc/opt/Navteq/
+    sudo chown -R navteq:navteq /var/opt/Navteq/
     sudo chown -R navteq:navteq /opt/Navteq/
     # sudo chmod -R a+r /opt/tomcat
-    sudo chmod -R 755 /opt/tomcat 
-    sudo chmod -R 755 /etc/opt/Navteq/ 
-    sudo chmod -R 755 /var/opt/Navteq/ 
+    sudo chmod -R 755 /opt/tomcat
+    sudo chmod -R 755 /etc/opt/Navteq/
+    sudo chmod -R 755 /var/opt/Navteq/
     sudo chmod -R 755 /opt/Navteq/
     EOF
     action :run
-    # not_if 'find /var/opt/Navteq -not -user navteq -or -not -group navteq'
+    not_if 'find /var/opt/Navteq -not -user navteq -or -not -group navteq'
 end
 
 ## Creating tomcat configuration
-# template '/etc/systemd/system/tomcat.service' do
-#     source 'tomcat.service.erb'
-#     owner 'root'
-#     group 'root'
-#     mode '0644'
-#     action :create
-# end
+template '/etc/systemd/system/tomcat.service' do
+    source 'tomcat.service.erb'
+    owner 'root'
+    group 'root'
+    mode '0644'
+    action :create
+    notifies :run, 'execute[reload Tomcat]', :immediate
+    notifies :enable, 'service[tomcat]', :immediate
+    notifies :start, 'service[tomcat]', :immediate
+end
 
 execute 'reload Tomcat' do
     command 'systemctl daemon-reload'
+    action :nothing
 end
 
 service 'tomcat' do
-    action [:enable, :start]
+    # action [:enable, :start]
+    action :nothing
 end
 
 
@@ -243,10 +251,15 @@ end
 execute 'untar map data' do
     user 'navteq'
     command 'tar -xvzf /vagrant/here_bits/RGC_2024Q1.007.RR.20240919.tgz -C /var/opt/Navteq/share/search/geocoder/'
+    live_stream true
     action :nothing
+    not_if { ::File.exist?('/var/opt/Navteq/share/search/geocoder/RGC_2024Q1.007.RR.20240919/engine.xml') }
 end
 
 
+
+
+#############################   END
 
 ## Removing granular config until everything is running.
 ## recursively apply tomcat permissions
@@ -338,7 +351,7 @@ end
 # rpm -qp --scripts nvt-base-gc-2.1.0-8.el6.noarch.rpm
     # more RPM debugging. See every system call RPM does.
 # sudo strace -f -o rpm_debug_trace.log rpm -ivvh nvt-base-gc-2.1.0-8.el6.noarch.rpm
-    # SELinux permission denied messages and convert them to rules 
+    # SELinux permission denied messages and convert them to rules
 # sudo ausearch -m AVC -ts recent | audit2allow
     # temporarily changes the SELinux mode to permissive mode. (defined in /etc/selinux/config)
 # sudo setenforce 0
@@ -398,7 +411,7 @@ end
 # validate /etc/nvt-services.conf
 
 # logs:
-# service: /var/opt/Navteq/log/search-search6-aggregation-service-6.2.255.1/ 
+# service: /var/opt/Navteq/log/search-search6-aggregation-service-6.2.255.1/
 # tomcat: /opt/tomcat/logs
 
 # starting / stopping services
@@ -412,3 +425,4 @@ end
 # maybe /etc/opt/Navteq/search-search6-aggregation-service-6.2.255.1/conf/server.xml is not setup right
 
 # do we need to chance tomcat location here: /etc/opt/Navteq/me2repository-6.2.255.1.conf
+# do we need to modify search/server.xml somewhere (page ~28) to enable connector
