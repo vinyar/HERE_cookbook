@@ -110,11 +110,15 @@ end
 ## creating empty folder to avoid RPM failure. Base installer will update permissions.
 directory '/var/opt/Navteq' do
     action :create
+    owner 'navteq'
+    group 'navteq'
 end
 
 ## creating empty folder to avoid RPM failure. Base installer will update permissions.
 directory '/opt/Navteq' do
     action :create
+    owner 'navteq'
+    group 'navteq'
 end
 
 ## Installing NVT Base RPM
@@ -191,8 +195,8 @@ template '/etc/systemd/system/tomcat.service' do
     mode '0644'
     action :create
     notifies :run, 'execute[reload Tomcat]', :immediate
-    notifies :enable, 'service[tomcat]', :immediate
-    notifies :start, 'service[tomcat]', :immediate
+    # notifies :enable, 'service[tomcat]', :immediate
+    # notifies :start, 'service[tomcat]', :immediate
 end
 
 execute 'reload Tomcat' do
@@ -204,7 +208,6 @@ service 'tomcat' do
     # action [:enable, :start]
     action :nothing
 end
-
 
 
 # /opt/tomcat/conf/server.xml
@@ -248,12 +251,46 @@ directory '/var/opt/Navteq/share/search/geocoder/' do
     action :create
 end
 
-execute 'untar map data' do
+execute 'untar RGC map data' do
     user 'navteq'
     command 'tar -xvzf /vagrant/here_bits/RGC_2024Q1.007.RR.20240919.tgz -C /var/opt/Navteq/share/search/geocoder/'
     live_stream true
     action :nothing
     not_if { ::File.exist?('/var/opt/Navteq/share/search/geocoder/RGC_2024Q1.007.RR.20240919/engine.xml') }
+end
+
+execute 'untar FGC map data' do
+    user 'navteq'
+    command 'tar -xvzf /vagrant/here_bits/FGC_2024Q1.007.RR.20240919.tgz -C /var/opt/Navteq/share/search/geocoder/'
+    live_stream true
+    action :nothing
+    not_if { ::File.exist?('/var/opt/Navteq/share/search/geocoder/FGC_2024Q1.007.RR.20240919/engine.xml') }
+end
+
+execute 'untar UMD map data' do
+    user 'navteq'
+    command 'tar -xvzf /vagrant/here_bits/UDM_2024Q1.007.RR.20240919.tgz -C /var/opt/Navteq/share/search/geocoder/'
+    live_stream true
+    action :nothing
+    not_if { ::File.exist?('/var/opt/Navteq/share/search/geocoder/UDM_2024Q1.007.RR.20240919/engine.xml') }
+end
+
+directory '/var/opt/Navteq/share/search/geocoder/RGC_2024Q1.007.RR.20240919' do
+    owner 'navteq'
+    group 'navteq'
+    action :create
+end
+
+directory '/var/opt/Navteq/share/search/geocoder/FGC_2024Q1.007.RR.20240919' do
+    owner 'navteq'
+    group 'navteq'
+    action :create
+end
+
+directory '/var/opt/Navteq/share/search/geocoder/UDM_2024Q1.007.RR.20240919' do
+    owner 'navteq'
+    group 'navteq'
+    action :create
 end
 
 
